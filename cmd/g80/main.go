@@ -8,6 +8,7 @@ import (
 
 	"g80/pkg/app"
 	"g80/pkg/cart"
+	"g80/pkg/editor/mapedit"
 	"g80/pkg/editor/spriteedit"
 	"g80/pkg/ui"
 
@@ -26,7 +27,7 @@ func main() {
 		log.Fatalf("load %s: %v", *path, err)
 	}
 
-	game := app.New(c, *path, spriteedit.New)
+	game := app.New(c, *path, spriteedit.New, mapedit.New)
 
 	ebiten.SetWindowTitle("g80 - " + *path)
 	ebiten.SetWindowSize(ui.ScreenWidth**scale, ui.ScreenHeight**scale)

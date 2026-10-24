@@ -3,6 +3,7 @@ package cart
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,25 +11,32 @@ import (
 
 	"g80/pkg/gfx"
 	"g80/pkg/sprite"
+	"g80/pkg/tilemap"
 )
 
-// Sprite sheet dimensions in tiles: two 16x16 pages (256 sprites each).
+// Sprite sheets are stored vertically, with 256 tiles per sheet.
 const (
-	SpriteTilesX = 16
-	SpriteTilesY = 32
+	SpriteSheetCount = 16
+	SpriteTilesX     = 16
+	SpriteTilesY     = SpriteTilesX * SpriteSheetCount
 )
 
 // Cart holds all game data that is saved to disk.
 type Cart struct {
 	Palette gfx.Palette
 	Sprites *sprite.Sheet
+	Maps    [tilemap.Count]*tilemap.Map
 }
 
 func New() *Cart {
-	return &Cart{
+	c := &Cart{
 		Palette: gfx.Sweetie16,
 		Sprites: sprite.NewSheet(SpriteTilesX, SpriteTilesY),
 	}
+	for index := range c.Maps {
+		c.Maps[index] = tilemap.New()
+	}
+	return c
 }
 
 // section is one "[name]" block of the plain-text cart file.
@@ -57,6 +65,45 @@ var sections = []section{
 		encode: func(c *Cart, w io.Writer) error { return c.Sprites.EncodeHex(w) },
 		decode: func(c *Cart, lines []string) error { return c.Sprites.DecodeHex(lines) },
 	},
+	{
+		name: "maps",
+		encode: func(c *Cart, w io.Writer) error {
+			maps := make(map[int]*tilemap.Map)
+			for index, m := range c.Maps {
+				if m == nil {
+					return fmt.Errorf("map %d is null", index)
+				}
+				if !m.IsEmpty() {
+					maps[index] = m
+				}
+			}
+			encoder := json.NewEncoder(w)
+			encoder.SetIndent("", " ")
+			return encoder.Encode(maps)
+		},
+		decode: func(c *Cart, lines []string) error {
+			var maps map[int]*tilemap.Map
+			if err := json.Unmarshal([]byte(strings.Join(lines, "\n")), &maps); err != nil {
+				return err
+			}
+			if maps == nil {
+				return fmt.Errorf("expected an indexed maps object")
+			}
+			for index, m := range maps {
+				if index < 0 || index >= tilemap.Count {
+					return fmt.Errorf("invalid map index %d", index)
+				}
+				if m == nil {
+					return fmt.Errorf("map %d is null", index)
+				}
+				if err := m.Validate(c.Sprites.NumTiles()); err != nil {
+					return fmt.Errorf("map %d: %w", index, err)
+				}
+				c.Maps[index] = m
+			}
+			return nil
+		},
+	},
 }
 
 const header = "# g80 cart v1"
@@ -83,7 +130,7 @@ func Decode(r io.Reader) (*Cart, error) {
 		line := strings.TrimSpace(sc.Text())
 		switch {
 		case line == "" || strings.HasPrefix(line, "#"):
-		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):
+		case len(line) > 2 && strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") && !strings.ContainsAny(line[1:len(line)-1], "[]{}\","):
 			current = strings.TrimSpace(line[1 : len(line)-1])
 		case current == "":
 			return nil, fmt.Errorf("line %d: data outside of a section", n)

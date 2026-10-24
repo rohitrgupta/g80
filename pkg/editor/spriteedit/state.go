@@ -8,7 +8,7 @@ import (
 )
 
 // PageTiles is the width and height, in tiles, of one sprite sheet page shown at a time.
-const PageTiles = 16
+const PageTiles = cart.SpriteTilesX
 
 const pageSize = PageTiles * PageTiles
 
